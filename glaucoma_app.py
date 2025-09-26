@@ -11,84 +11,68 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+from sklearn.preprocessing import StandardScaler
 
 st.title("Glaucoma Classification App")
 
-# Load the saved logistic regression model
+# Load model with the correct filename
 try:
-    with open('logreg_model.pkl', 'rb') as file:
-        model = pickle.load(file)
+    with open('logreg_model.pkl', 'rb') as f:
+        model = pickle.load(f)
 except FileNotFoundError:
-    st.error("Model file 'logreg_model.pkl' not found.")
+    st.error("Model file 'logreg_model.pkl' not found. Please ensure it is in the same directory.")
     st.stop()
 
-# User inputs in sidebar
 st.sidebar.header("Enter Patient Details")
 
-age = st.sidebar.number_input('Age', min_value=4, max_value=90, value=50)
-gender = st.sidebar.selectbox('Gender', ['Male', 'Female'])
-visual_acuity = st.sidebar.selectbox('Visual Acuity Measurements', ['LogMAR 0.0', 'LogMAR 0.1', '2040', 'Other'])
-intraocular_pressure = st.sidebar.number_input('Intraocular Pressure (IOP)', min_value=10.0, max_value=90.0, value=20.0)
-cup_to_disc_ratio = st.sidebar.number_input('Cup-to-Disc Ratio (CDR)', min_value=0.3, max_value=0.8, value=0.5)
-family_history = st.sidebar.selectbox('Family History', ['No', 'Yes'])
-pachymetry = st.sidebar.number_input('Pachymetry', min_value=500.0, max_value=600.0, value=550.0)
-cataract_status = st.sidebar.selectbox('Cataract Status', ['Present', 'Absent'])
-angle_closure_status = st.sidebar.selectbox('Angle Closure Status', ['Open', 'Closed'])
-diagnosis = st.sidebar.selectbox('Diagnosis', ['Glaucoma', 'No Glaucoma'])
+age = st.sidebar.slider('Age', 10, 100, 50)
+visual_acuity = st.sidebar.slider('Visual Acuity Measurement', 0.0, 2.0, 1.0)
+intraocular_pressure = st.sidebar.slider('Intraocular Pressure (IOP)', 5, 50, 15)
+cup_to_disc_ratio = st.sidebar.slider('Cup-to-Disc Ratio (CDR)', 0.0, 1.0, 0.3)
+family_history = st.sidebar.selectbox('Family History of Glaucoma', ['No', 'Yes'])
+medical_history = st.sidebar.selectbox('Medical History', ['None', 'Diabetes', 'Hypertension', 'Other'])
+cataract_status = st.sidebar.selectbox('Cataract Status', ['No', 'Yes'])
+angle_closure_status = st.sidebar.selectbox('Angle Closure Status', ['No', 'Yes'])
+visual_field_test = st.sidebar.slider('Visual Field Test Result', 0, 100, 50)
+oct_results = st.sidebar.slider('Optical Coherence Tomography (OCT) Result', 0, 100, 50)
+pachymetry = st.sidebar.slider('Pachymetry', 300, 600, 550)
 
-# Prepare input dataframe as per training features
 def preprocess_input():
     data = {
         'Age': age,
-        'Gender_Female': 1 if gender == 'Female' else 0,
-        'Gender_Male': 1 if gender == 'Male' else 0,
-        'Visual Acuity Measurements_2040': 1 if visual_acuity == '2040' else 0,
-        'Visual Acuity Measurements_LogMAR 0.0': 1 if visual_acuity == 'LogMAR 0.0' else 0,
-        'Visual Acuity Measurements_LogMAR 0.1': 1 if visual_acuity == 'LogMAR 0.1' else 0,
-        'Visual Acuity Measurements_Other': 1 if visual_acuity == 'Other' else 0,
-        'Intraocular Pressure IOP': intraocular_pressure,
-        'Cup-to-Disc Ratio CDR': cup_to_disc_ratio,
-        'Family History_No': 1 if family_history == 'No' else 0,
+        'Visual Acuity Measurements': visual_acuity,
+        'Intraocular Pressure (IOP)': intraocular_pressure,
+        'Cup-to-Disc Ratio (CDR)': cup_to_disc_ratio,
         'Family History_Yes': 1 if family_history == 'Yes' else 0,
+        'Medical History_Diabetes': 1 if medical_history == 'Diabetes' else 0,
+        'Medical History_Hypertension': 1 if medical_history == 'Hypertension' else 0,
+        'Medical History_Other': 1 if medical_history == 'Other' else 0,
+        'Cataract Status_Yes': 1 if cataract_status == 'Yes' else 0,
+        'Angle Closure Status_Yes': 1 if angle_closure_status == 'Yes' else 0,
+        'Visual Field Test Results': visual_field_test,
+        'Optical Coherence Tomography (OCT) Results': oct_results,
         'Pachymetry': pachymetry,
-        'Cataract Status_Absent': 1 if cataract_status == 'Absent' else 0,
-        'Cataract Status_Present': 1 if cataract_status == 'Present' else 0,
-        'Angle Closure Status_Closed': 1 if angle_closure_status == 'Closed' else 0,
-        'Angle Closure Status_Open': 1 if angle_closure_status == 'Open' else 0,
-        'Diagnosis_Glaucoma': 1 if diagnosis == 'Glaucoma' else 0,
-        'Diagnosis_No Glaucoma': 1 if diagnosis == 'No Glaucoma' else 0,
     }
-
-    # Construct dataframe with all expected columns from training
-    feature_columns = [
-        'Age',
-        'Gender_Female', 'Gender_Male',
-        'Visual Acuity Measurements_2040', 'Visual Acuity Measurements_LogMAR 0.0', 'Visual Acuity Measurements_LogMAR 0.1', 'Visual Acuity Measurements_Other',
-        'Intraocular Pressure IOP',
-        'Cup-to-Disc Ratio CDR',
-        'Family History_No', 'Family History_Yes',
-        'Pachymetry',
-        'Cataract Status_Absent', 'Cataract Status_Present',
-        'Angle Closure Status_Closed', 'Angle Closure Status_Open',
-        'Diagnosis_Glaucoma', 'Diagnosis_No Glaucoma'
-    ]
-
-    # Add any missing columns with 0 (important for dummy encoding consistency)
-    for col in feature_columns:
-        if col not in data:
-            data[col] = 0
-
     input_df = pd.DataFrame([data])
-    input_df = input_df[feature_columns]  # reorder columns to match training order
 
+    scaler_features = ['Age', 'Visual Acuity Measurements', 'Intraocular Pressure (IOP)',
+                       'Cup-to-Disc Ratio (CDR)', 'Visual Field Test Results',
+                       'Optical Coherence Tomography (OCT) Results', 'Pachymetry']
+
+    scaler = StandardScaler()
+    input_df[scaler_features] = scaler.fit_transform(input_df[scaler_features])
+    
     return input_df
 
 if st.sidebar.button("Predict"):
     input_data = preprocess_input()
     prediction = model.predict(input_data)
     st.subheader("Prediction Result")
-    st.write(f"Predicted Glaucoma Type: {prediction[0]}")
+    st.write(f"The predicted glaucoma type is: {prediction[0]}")
 
 st.write("""
-Use the sidebar to input patient clinical data and get a glaucoma type prediction.
+Instructions:
+1. Enter the patient details using the sidebar input controls.
+2. Click the Predict button to get the glaucoma type prediction.
 """)
+
